@@ -1,0 +1,28 @@
+{
+  "IsEncrypted": false,
+  "Host": {
+    "LocalHttpPort": 7071
+  },
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "PYTHONPATH": "src",
+    "DOCINT_ENVIRONMENT_NAME": "dev",
+    "DOCINT_STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "DOCINT_FUNCTION_API_BASE_URL": "",
+    "DOCINT_PUBLIC_SITE_URL": "",
+    "DOCINT_PUBLIC_TRAFFIC_ALERTS_ENABLED": "false",
+    "DOCINT_PUBLIC_ALERT_RECIPIENT_EMAIL": "",
+    "DOCINT_PUBLIC_TELEMETRY_HISTORY_CONTAINER_NAME": "public-site-telemetry",
+    "DOCINT_PUBLIC_TELEMETRY_HISTORY_DIRECTORY": "outputs/public-site-telemetry",
+    "DOCINT_PUBLIC_TELEMETRY_RETENTION_DAYS": "60",
+    "DOCINT_PUBLIC_HEALTH_DIGEST_WINDOW_DAYS": "7",
+    "DOCINT_PUBLIC_HEALTH_DIGEST_MAX_CHECKS": "5",
+    "DOCINT_SMTP_HOST": "",
+    "DOCINT_SMTP_PORT": "587",
+    "DOCINT_SMTP_USERNAME": "",
+    "DOCINT_SMTP_PASSWORD": "",
+    "DOCINT_SMTP_SENDER_EMAIL": "",
+    "DOCINT_SMTP_USE_TLS": "true"
+  }
+}

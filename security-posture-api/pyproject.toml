@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ryan-security-posture-api"
+version = "0.1.0"
+description = "Extracted public-safe API package for the Ryan security posture site."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "azure-functions>=1.23.0",
+  "azure-storage-blob>=12.24.0",
+  "pydantic>=2.10.0",
+  "pydantic-settings>=2.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.14.1",
+  "pytest>=8.3.4",
+  "ruff>=0.8.4",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+mypy_path = "src"
+packages = ["security_posture_api"]
+
+[[tool.mypy.overrides]]
+module = ["azure.functions"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["function_app"]
+disallow_untyped_decorators = false
+warn_return_any = false

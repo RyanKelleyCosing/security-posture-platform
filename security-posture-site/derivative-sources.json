@@ -1,0 +1,29 @@
+{
+  "package_name": "ryan-security-posture-site",
+  "manifest_reference": "private repo boundary manifest",
+  "package_purpose": "public_demonstration_only",
+  "copied_files": [
+    "docs/ryancodes-security-online-concept.md",
+    "src/api/publicTrafficApi.ts",
+    "src/components/SecurityPostureSite.test.tsx",
+    "src/components/SecurityPostureSite.tsx",
+    "src/data/securitySiteContent.ts"
+  ],
+  "generated_files": [
+    ".env.example",
+    ".gitignore",
+    "README.md",
+    "index.html",
+    "package.json",
+    "public/favicon.svg",
+    "src/App.tsx",
+    "src/main.tsx",
+    "src/styles.css",
+    "src/test/setup.ts",
+    "src/vite-env.d.ts",
+    "tsconfig.json",
+    "tsconfig.node.json",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
+}

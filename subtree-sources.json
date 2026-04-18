@@ -1,0 +1,53 @@
+{
+  "generated_files": [
+    ".github/workflows/validate.yml",
+    ".gitignore",
+    "README.md",
+    "subtree-sources.json"
+  ],
+  "packages": [
+    {
+      "destination_directory_name": "security-posture-site",
+      "included_files": [
+        ".env.example",
+        ".gitignore",
+        "README.md",
+        "derivative-sources.json",
+        "index.html",
+        "package-lock.json",
+        "package.json",
+        "public/favicon.svg",
+        "src/App.tsx",
+        "src/main.tsx",
+        "src/styles.css",
+        "src/test/setup.ts",
+        "src/vite-env.d.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        "vitest.config.ts"
+      ],
+      "source_relative_path": "public-derivatives/security-posture-site"
+    },
+    {
+      "destination_directory_name": "security-posture-api",
+      "included_files": [
+        ".gitignore",
+        "README.md",
+        "derivative-sources.json",
+        "function_app.py",
+        "host.json",
+        "local.settings.example.json",
+        "pyproject.toml",
+        "requirements.txt",
+        "src/security_posture_api/__init__.py",
+        "src/security_posture_api/settings.py",
+        "src/security_posture_api/utils/__init__.py",
+        "src/security_posture_api/verification_settings.py",
+        "tests/unit/test_function_app.py"
+      ],
+      "source_relative_path": "public-derivatives/security-posture-api"
+    }
+  ],
+  "subtree_name": "security-posture-platform"
+}

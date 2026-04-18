@@ -1,0 +1,4 @@
+azure-functions>=1.23.0
+azure-storage-blob>=12.24.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.1

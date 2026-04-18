@@ -1,0 +1,11 @@
+security-posture-api/.mypy_cache/
+security-posture-api/.venv/
+security-posture-api/.pytest_cache/
+security-posture-api/.ruff_cache/
+security-posture-api/__pycache__/
+security-posture-api/local.settings.json
+security-posture-api/outputs/
+security-posture-site/coverage/
+security-posture-site/dist/
+security-posture-site/node_modules/
+security-posture-site/*.tsbuildinfo

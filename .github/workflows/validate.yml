@@ -1,0 +1,99 @@
+name: Validate Security Posture Platform
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate-public-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Scan for private or machine-specific content
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+
+          forbidden_patterns = (
+              'C:\\Users\\',
+              '/Users/',
+              'private-repo-boundary-manifest.json',
+              'ryankelley1992@outlook.com',
+              'DOCINT_SQL_CONNECTION_STRING=',
+              'AccountKey=',
+              'SharedAccessSignature=',
+              'DefaultEndpointsProtocol=',
+              '-----BEGIN PRIVATE KEY-----',
+          )
+
+          violations = []
+          for path in Path('.').rglob('*'):
+              if (
+                  not path.is_file()
+                  or '.git' in path.parts
+                  or path.as_posix() == '.github/workflows/validate.yml'
+              ):
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except UnicodeDecodeError:
+                  continue
+              for pattern in forbidden_patterns:
+                  if pattern in text:
+                      violations.append(f'{path}: {pattern}')
+          if violations:
+              print('Public safety audit failed:')
+              for violation in violations:
+                  print(violation)
+              sys.exit(1)
+          PY
+
+  validate-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install site dependencies
+        working-directory: security-posture-site
+        run: npm install
+
+      - name: Run site tests
+        working-directory: security-posture-site
+        run: npm test
+
+      - name: Build site
+        working-directory: security-posture-site
+        run: npm run build
+
+  validate-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install API dependencies
+        working-directory: security-posture-api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .[dev]
+
+      - name: Run API tests
+        working-directory: security-posture-api
+        run: pytest tests/unit

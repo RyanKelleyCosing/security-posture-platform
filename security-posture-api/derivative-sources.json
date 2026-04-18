@@ -1,0 +1,37 @@
+{
+  "package_name": "ryan-security-posture-api",
+  "manifest_reference": "private repo boundary manifest",
+  "package_purpose": "public_demonstration_only",
+  "copied_files": [
+    "scripts/verify_public_simulation_stack.py",
+    "src/security_posture_api/public_request_context.py",
+    "src/security_posture_api/public_site_monitor.py",
+    "src/security_posture_api/public_traffic_metrics.py",
+    "src/security_posture_api/traffic_alerts.py",
+    "src/security_posture_api/utils/public_simulation_verifier.py",
+    "src/security_posture_api/utils/public_traffic_client.py"
+  ],
+  "validation_files": [
+    "tests/unit/test_public_request_context.py",
+    "tests/unit/test_public_simulation_verifier.py",
+    "tests/unit/test_public_site_monitor.py",
+    "tests/unit/test_public_traffic_client.py",
+    "tests/unit/test_public_traffic_metrics.py",
+    "tests/unit/test_traffic_alerts.py"
+  ],
+  "generated_files": [
+    ".gitignore",
+    "README.md",
+    "derivative-sources.json",
+    "function_app.py",
+    "host.json",
+    "local.settings.example.json",
+    "pyproject.toml",
+    "requirements.txt",
+    "src/security_posture_api/__init__.py",
+    "src/security_posture_api/settings.py",
+    "src/security_posture_api/utils/__init__.py",
+    "src/security_posture_api/verification_settings.py",
+    "tests/unit/test_function_app.py"
+  ]
+}
