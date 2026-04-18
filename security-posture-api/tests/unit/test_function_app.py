@@ -11,6 +11,10 @@ from types import ModuleType
 import azure.functions as func
 from pytest import MonkeyPatch
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 
 def load_function_app() -> ModuleType:
     """Load the standalone public Function app module."""
