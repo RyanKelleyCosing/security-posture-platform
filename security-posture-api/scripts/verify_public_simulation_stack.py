@@ -23,8 +23,14 @@ from security_posture_api.public_traffic_metrics import (  # noqa: E402
 )
 from security_posture_api.settings import AppSettings  # noqa: E402
 from security_posture_api.utils.public_simulation_verifier import (  # noqa: E402
+    fetch_public_cost_history,
+    fetch_public_cost_latest,
+    fetch_public_request_context,
+    fetch_public_cost_summary,
     fetch_public_site_check,
     load_azure_function_app_settings,
+    normalize_public_site_url,
+    parse_bool_setting,
     public_traffic_response_sent_alert,
     resolve_azure_cli_executable,
     resolve_function_base_url,
@@ -45,8 +51,8 @@ def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for public simulation deployment verification."""
     parser = argparse.ArgumentParser(
         description=(
-            "Verify the public simulation site, the anonymous traffic route, and "
-            "whether email alert settings are ready."
+            "Verify the public simulation site, the anonymous request-context and "
+            "traffic routes, and whether email alert settings are ready."
         ),
     )
     parser.add_argument(
@@ -144,6 +150,28 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--verify-public-cost",
+        action="store_true",
+        help=(
+            "Verify the public cost summary, latest JSON export, CSV history export, "
+            "and optional /cost site route."
+        ),
+    )
+    parser.add_argument(
+        "--require-azure-cost-history",
+        action="store_true",
+        help=(
+            "Fail verification unless the public cost summary reports retained "
+            "durable history instead of the bundled repo snapshot."
+        ),
+    )
+    parser.add_argument(
+        "--minimum-cost-history-rows",
+        type=int,
+        default=1,
+        help="Minimum retained history rows expected from the public cost summary and CSV export.",
+    )
+    parser.add_argument(
         "--storage-account-name",
         default="",
         help="Optional storage account name override for public history persistence.",
@@ -160,6 +188,59 @@ def parse_args() -> argparse.Namespace:
         help="Optional JSON output file path for the verification result.",
     )
     return parser.parse_args()
+
+
+def _is_non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def public_network_enrichment_provider_is_configured(
+    provider_name: str,
+    provider_key: str,
+) -> bool:
+    """Return whether the current provider configuration should produce enrichment."""
+
+    if provider_name in {"", "none"}:
+        return False
+
+    if provider_name in {"ipqualityscore", "ipqs"}:
+        return bool(provider_key)
+
+    return True
+
+
+def build_public_request_context_headers(args: argparse.Namespace) -> dict[str, str]:
+    """Build HTTP headers for request-context verification."""
+
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": args.user_agent,
+        "X-Forwarded-Proto": "https",
+    }
+    if args.forwarded_for.strip():
+        headers["X-Forwarded-For"] = args.forwarded_for.strip()
+
+    return headers
+
+
+def public_request_context_payload_is_valid(payload: dict[str, object]) -> bool:
+    """Return whether a request-context payload includes the expected public fields."""
+
+    required_string_fields = (
+        "approximate_location",
+        "edge_region",
+        "enrichment_status",
+        "forwarded_host",
+        "forwarded_proto",
+        "request_id",
+        "request_timestamp_utc",
+        "tls_protocol",
+        "transport_security",
+    )
+    return all(_is_non_empty_string(payload.get(field_name)) for field_name in required_string_fields) and isinstance(
+        payload.get("public_network_enrichment_enabled"),
+        bool,
+    ) and isinstance(payload.get("public_security_globe_enabled"), bool)
 
 
 def load_alert_settings(args: argparse.Namespace) -> dict[str, str] | None:
@@ -228,6 +309,7 @@ def main() -> int:
     args = parse_args()
 
     results: dict[str, object] = {"ok": True}
+    loaded_settings = load_alert_settings(args)
 
     if args.public_site_url.strip():
         site_check = fetch_public_site_check(args.public_site_url)
@@ -235,6 +317,80 @@ def main() -> int:
         results["ok"] = bool(results["ok"]) and site_check.is_reachable
 
     function_base_url = resolve_function_base_url_for_verification(args)
+    request_context_headers = build_public_request_context_headers(args)
+
+    try:
+        request_context_response = fetch_public_request_context(
+            function_base_url,
+            headers=request_context_headers,
+        )
+    except (HTTPError, URLError, ValueError) as error:
+        logging.error("Public request-context verification failed: %s", error)
+        results["public_request_context"] = {
+            "error": str(error),
+            "ok": False,
+        }
+        results["ok"] = False
+    else:
+        request_context_payload = request_context_response.payload
+        flags_match = True
+        expected_provider_configured: bool | None = None
+
+        if loaded_settings is not None:
+            expected_enrichment_enabled = parse_bool_setting(
+                loaded_settings.get("DOCINT_PUBLIC_NETWORK_ENRICHMENT_ENABLED")
+            )
+            expected_globe_enabled = parse_bool_setting(
+                loaded_settings.get("DOCINT_PUBLIC_SECURITY_GLOBE_ENABLED")
+            )
+            configured_provider_name = (
+                loaded_settings.get("DOCINT_PUBLIC_NETWORK_ENRICHMENT_PROVIDER", "")
+                .strip()
+                .lower()
+            )
+            configured_provider_key = loaded_settings.get(
+                "DOCINT_PUBLIC_NETWORK_ENRICHMENT_API_KEY",
+                "",
+            ).strip()
+            flags_match = (
+                request_context_payload.get("public_network_enrichment_enabled")
+                is expected_enrichment_enabled
+                and request_context_payload.get("public_security_globe_enabled")
+                is expected_globe_enabled
+            )
+            expected_provider_configured = (
+                expected_enrichment_enabled
+                and public_network_enrichment_provider_is_configured(
+                    configured_provider_name,
+                    configured_provider_key,
+                )
+            )
+
+        provider_check_ok = True
+        if expected_provider_configured:
+            provider_name = request_context_payload.get("enrichment_provider_name")
+            provider_check_ok = _is_non_empty_string(provider_name)
+
+        public_request_context_ok = (
+            request_context_response.status_code == 200
+            and public_request_context_payload_is_valid(request_context_payload)
+            and flags_match
+            and provider_check_ok
+        )
+        results["public_request_context"] = {
+            "endpoint": request_context_response.url,
+            "headers": request_context_headers,
+            "response": request_context_payload,
+            "status_code": request_context_response.status_code,
+            "ok": public_request_context_ok,
+            "flags_match": flags_match,
+            "provider_check": {
+                "configured": expected_provider_configured,
+                "ok": provider_check_ok,
+            },
+        }
+        results["ok"] = bool(results["ok"]) and public_request_context_ok
+
     endpoint = resolve_public_traffic_endpoint(
         function_base_url,
         args.local_settings_file,
@@ -278,9 +434,111 @@ def main() -> int:
     if args.require_alert_sent:
         results["ok"] = bool(results["ok"]) and alert_sent
 
-    alert_settings = load_alert_settings(args)
-    if alert_settings is not None:
-        alert_summary = summarize_public_alert_settings(alert_settings)
+    if args.verify_public_cost:
+        if not function_base_url:
+            results["public_cost"] = {
+                "error": (
+                    "Public cost verification requires --function-base-url or "
+                    "--settings-source azure."
+                ),
+                "ok": False,
+            }
+            results["ok"] = False
+        else:
+            try:
+                summary_response = fetch_public_cost_summary(function_base_url)
+                latest_response = fetch_public_cost_latest(function_base_url)
+                history_response = fetch_public_cost_history(function_base_url)
+            except (HTTPError, URLError, ValueError) as error:
+                logging.error("Public cost verification failed: %s", error)
+                results["public_cost"] = {
+                    "error": str(error),
+                    "ok": False,
+                }
+                results["ok"] = False
+            else:
+                summary_payload = summary_response.payload
+                latest_payload = latest_response.payload
+                history_source = summary_payload.get("history_source")
+                history_row_count = summary_payload.get("history_row_count")
+                month_to_date_cost = summary_payload.get("month_to_date_cost")
+                latest_cost_summary = latest_payload.get("costSummary")
+                csv_lines = [
+                    line for line in history_response.text.splitlines() if line.strip()
+                ]
+                history_csv_row_count = max(len(csv_lines) - 1, 0)
+
+                summary_has_required_fields = (
+                    isinstance(history_source, str)
+                    and isinstance(history_row_count, int)
+                    and isinstance(month_to_date_cost, int | float)
+                )
+                latest_has_cost_summary = isinstance(latest_cost_summary, dict)
+                has_minimum_history_rows = (
+                    isinstance(history_row_count, int)
+                    and history_row_count >= args.minimum_cost_history_rows
+                    and history_csv_row_count >= args.minimum_cost_history_rows
+                )
+                uses_azure_cost_history = isinstance(history_source, str) and (
+                    history_source == "Retained public cost history"
+                    or history_source.startswith("Azure Blob cost history")
+                )
+
+                route_check: dict[str, object] | None = None
+                route_ok = True
+                if args.public_site_url.strip():
+                    normalized_public_site_url = normalize_public_site_url(
+                        args.public_site_url
+                    )
+                    route_check = asdict(
+                        fetch_public_site_check(
+                            f"{normalized_public_site_url}/#/cost"
+                        )
+                    )
+                    route_ok = bool(route_check.get("is_reachable"))
+
+                public_cost_ok = (
+                    summary_has_required_fields
+                    and latest_has_cost_summary
+                    and has_minimum_history_rows
+                    and route_ok
+                    and (
+                        not args.require_azure_cost_history
+                        or uses_azure_cost_history
+                    )
+                )
+
+                results["public_cost"] = {
+                    "cost_route": route_check,
+                    "csv_export": {
+                        "content_type": history_response.content_type,
+                        "ok": history_csv_row_count >= args.minimum_cost_history_rows,
+                        "row_count": history_csv_row_count,
+                        "status_code": history_response.status_code,
+                        "url": history_response.url,
+                    },
+                    "latest_json": {
+                        "content_type": latest_response.content_type,
+                        "has_cost_summary": latest_has_cost_summary,
+                        "ok": latest_has_cost_summary,
+                        "status_code": latest_response.status_code,
+                        "url": latest_response.url,
+                    },
+                    "ok": public_cost_ok,
+                    "summary": {
+                        "history_row_count": history_row_count,
+                        "history_source": history_source,
+                        "month_to_date_cost": month_to_date_cost,
+                        "ok": summary_has_required_fields,
+                        "status_code": summary_response.status_code,
+                        "url": summary_response.url,
+                        "uses_azure_cost_history": uses_azure_cost_history,
+                    },
+                }
+                results["ok"] = bool(results["ok"]) and public_cost_ok
+
+    if loaded_settings is not None:
+        alert_summary = summarize_public_alert_settings(loaded_settings)
         results["alert_settings"] = asdict(alert_summary)
         if args.require_alert_ready:
             results["ok"] = bool(results["ok"]) and alert_summary.email_ready

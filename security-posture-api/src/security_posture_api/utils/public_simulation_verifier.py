@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
+from typing import Any, Literal
 from urllib.request import Request, urlopen
 
 PUBLIC_ALERT_REQUIRED_SETTINGS = (
@@ -34,6 +35,26 @@ class PublicSiteCheck:
     content_type: str
     is_reachable: bool
     status_code: int
+    url: str
+
+
+@dataclass(frozen=True)
+class PublicJsonResponse:
+    """One public JSON endpoint fetch result."""
+
+    content_type: str
+    payload: dict[str, Any]
+    status_code: int
+    url: str
+
+
+@dataclass(frozen=True)
+class PublicTextResponse:
+    """One public text endpoint fetch result."""
+
+    content_type: str
+    status_code: int
+    text: str
     url: str
 
 
@@ -112,6 +133,158 @@ def fetch_public_site_check(public_site_url: str) -> PublicSiteCheck:
             status_code=response.status,
             url=normalized_url,
         )
+
+
+PUBLIC_SITE_DEEP_PATHS: tuple[str, ...] = ("/", "/security", "/cost", "/demo")
+
+
+def fetch_public_site_deep_checks(
+    public_site_url: str,
+    *,
+    paths: tuple[str, ...] = PUBLIC_SITE_DEEP_PATHS,
+) -> tuple[PublicSiteCheck, ...]:
+    """Fetch availability for each public SPA route in path form (no hash).
+
+    Locks in the SWA `staticwebapp.config.json` `navigationFallback` rule so a
+    deep-link regression cannot ship silently.
+    """
+
+    normalized_base_url = normalize_public_site_url(public_site_url)
+    checks: list[PublicSiteCheck] = []
+    for path in paths:
+        suffix = path if path.startswith("/") else f"/{path}"
+        target_url = normalized_base_url if suffix == "/" else f"{normalized_base_url}{suffix}"
+        checks.append(fetch_public_site_check(target_url))
+    return tuple(checks)
+
+
+def resolve_public_openapi_endpoint(function_base_url: str) -> str:
+    """Resolve the public OpenAPI document URL from the Functions base URL."""
+
+    normalized_base_url = normalize_function_base_url(function_base_url)
+    return f"{normalized_base_url}/docs/public-openapi.json"
+
+
+def fetch_public_openapi_document(function_base_url: str) -> PublicJsonResponse:
+    """Fetch the public OpenAPI document so a 404 regression fails the verifier."""
+
+    return _fetch_public_json(
+        resolve_public_openapi_endpoint(function_base_url),
+    )
+
+
+def normalize_function_base_url(function_base_url: str) -> str:
+    """Return a normalized Function App base URL with an explicit scheme."""
+
+    normalized_url = function_base_url.strip().rstrip("/")
+    if not normalized_url:
+        raise ValueError("function_base_url is required")
+    if not normalized_url.startswith(("http://", "https://")):
+        raise ValueError("function_base_url must start with http:// or https://")
+
+    return normalized_url
+
+
+def resolve_public_cost_endpoint(
+    function_base_url: str,
+    endpoint_kind: Literal["summary", "latest", "history"],
+) -> str:
+    """Resolve one public cost endpoint URL from the Functions base URL."""
+
+    normalized_base_url = normalize_function_base_url(function_base_url)
+    endpoint_paths = {
+        "summary": "public-cost-summary",
+        "latest": "public-cost-latest",
+        "history": "public-cost-history",
+    }
+    return f"{normalized_base_url}/{endpoint_paths[endpoint_kind]}"
+
+
+def resolve_public_request_context_endpoint(function_base_url: str) -> str:
+    """Resolve the public request-context endpoint URL from the Functions base URL."""
+
+    normalized_base_url = normalize_function_base_url(function_base_url)
+    return f"{normalized_base_url}/public-request-context"
+
+
+def _fetch_public_json(
+    url: str,
+    *,
+    headers: Mapping[str, str] | None = None,
+) -> PublicJsonResponse:
+    request_headers = {"Accept": "application/json"}
+    if headers is not None:
+        request_headers.update(dict(headers))
+
+    request = Request(
+        url,
+        headers=request_headers,
+        method="GET",
+    )
+    with urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("Expected a JSON object response.")
+
+        return PublicJsonResponse(
+            content_type=response.headers.get_content_type(),
+            payload=payload,
+            status_code=response.status,
+            url=url,
+        )
+
+
+def _fetch_public_text(url: str, *, accept: str) -> PublicTextResponse:
+    request = Request(
+        url,
+        headers={"Accept": accept},
+        method="GET",
+    )
+    with urlopen(request, timeout=30) as response:
+        return PublicTextResponse(
+            content_type=response.headers.get_content_type(),
+            status_code=response.status,
+            text=response.read().decode("utf-8"),
+            url=url,
+        )
+
+
+def fetch_public_cost_summary(function_base_url: str) -> PublicJsonResponse:
+    """Fetch the public cost summary JSON payload."""
+
+    return _fetch_public_json(
+        resolve_public_cost_endpoint(function_base_url, "summary")
+    )
+
+
+def fetch_public_request_context(
+    function_base_url: str,
+    *,
+    headers: Mapping[str, str] | None = None,
+) -> PublicJsonResponse:
+    """Fetch the public request-context JSON payload."""
+
+    return _fetch_public_json(
+        resolve_public_request_context_endpoint(function_base_url),
+        headers=headers,
+    )
+
+
+def fetch_public_cost_latest(function_base_url: str) -> PublicJsonResponse:
+    """Fetch the latest retained public cost JSON payload."""
+
+    return _fetch_public_json(
+        resolve_public_cost_endpoint(function_base_url, "latest")
+    )
+
+
+def fetch_public_cost_history(function_base_url: str) -> PublicTextResponse:
+    """Fetch the retained public cost CSV payload."""
+
+    return _fetch_public_text(
+        resolve_public_cost_endpoint(function_base_url, "history"),
+        accept="text/csv,text/plain",
+    )
 
 
 def resolve_azure_cli_executable() -> str:
